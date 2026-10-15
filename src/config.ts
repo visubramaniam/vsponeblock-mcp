@@ -14,7 +14,7 @@ export function loadJson<T>(path: string, what: string): T {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;
   } catch (e) {
-    throw new Error(`[vsp360-mcp] cannot read ${what} at ${path}: ${(e as Error).message}`);
+    throw new Error(`[vsponeblock-mcp] cannot read ${what} at ${path}: ${(e as Error).message}`);
   }
 }
 
@@ -29,38 +29,32 @@ export interface ServerConfig {
   specPath: string;
   allowWrites: boolean;
   allowSecretReads: boolean;
-  /** VSP360_UPLOAD_DIR is set; the client enforces the folder itself. */
+  /** VSPONEBLOCK_UPLOAD_DIR is set; the client enforces the folder itself. */
   uploadDirSet: boolean;
   toolsets: string[];
   examplesPath: string;
-  analyticsFieldsPath: string;
   decision: {
     logPath?: string;
     linkSeconds: number;
     collect: boolean;
     collectSeconds: number;
-    hintMode: string;
-    modelPath: string;
   };
 }
 
 export function loadServerConfig(env = process.env): ServerConfig {
   return {
-    specPath: env.VSP360_SPEC || bundled("spec", "Platform-vsp360-openapi.yaml"),
-    allowWrites: env.VSP360_ALLOW_WRITES === "true",
-    allowSecretReads: env.VSP360_ALLOW_SECRET_READS === "true",
-    uploadDirSet: Boolean(env.VSP360_UPLOAD_DIR),
-    toolsets: (env.VSP360_TOOLSETS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
-    // An empty VSP360_EXAMPLES turns the example questions off.
-    examplesPath: env.VSP360_EXAMPLES ?? bundled("spec", "examples.json"),
-    analyticsFieldsPath: env.VSP360_ANALYTICS_FIELDS ?? bundled("spec", "analytics-fields.json"),
+    specPath: env.VSPONEBLOCK_SPEC || bundled("spec", "vsponeblock-10.5.4.yaml"),
+    allowWrites: env.VSPONEBLOCK_ALLOW_WRITES === "true",
+    allowSecretReads: env.VSPONEBLOCK_ALLOW_SECRET_READS === "true",
+    uploadDirSet: Boolean(env.VSPONEBLOCK_UPLOAD_DIR),
+    toolsets: (env.VSPONEBLOCK_TOOLSETS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    // An empty VSPONEBLOCK_EXAMPLES turns the example questions off.
+    examplesPath: env.VSPONEBLOCK_EXAMPLES ?? bundled("spec", "examples.json"),
     decision: {
-      logPath: env.VSP360_DECISION_LOG || undefined,
-      linkSeconds: Number(env.VSP360_DECISION_LINK_SECONDS) || 120,
-      collect: env.VSP360_DECISION_COLLECT === "true",
-      collectSeconds: Number(env.VSP360_DECISION_COLLECT_SECONDS) || 600,
-      hintMode: env.VSP360_DECISION_HINT ?? "false",
-      modelPath: env.VSP360_DECISION_MODEL ?? bundled("spec", "decision-model.json"),
+      logPath: env.VSPONEBLOCK_DECISION_LOG || undefined,
+      linkSeconds: Number(env.VSPONEBLOCK_DECISION_LINK_SECONDS) || 120,
+      collect: env.VSPONEBLOCK_DECISION_COLLECT === "true",
+      collectSeconds: Number(env.VSPONEBLOCK_DECISION_COLLECT_SECONDS) || 600,
     },
   };
 }

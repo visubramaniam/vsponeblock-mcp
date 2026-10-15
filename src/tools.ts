@@ -1,4 +1,4 @@
-// MCP tool definitions: the three discovery tools, and one direct tool per operation for VSP360_TOOLSETS.
+// MCP tool definitions: the three discovery tools, and one direct tool per operation for VSPONEBLOCK_TOOLSETS.
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { type Operation, fileFields, isMultipart, toolParamName } from "./spec.js";
 
@@ -15,21 +15,21 @@ export interface ToolOptions {
 export function metaTools(o: ToolOptions): Tool[] {
   return [
     {
-      name: "vsp360_list_operations",
+      name: "vsponeblock_list_operations",
       description:
-        "Browse the VSP 360 REST API. With no arguments, lists the API areas (tags) and how many operations each has. " +
+        "Browse the VSP One Block REST API. With no arguments, lists the API areas (tags) and how many operations each has. " +
         "With `tag` and/or `query`, lists matching operations (operationId, method, path, summary). " +
-        "Use this first to find the operationId you need, then vsp360_describe_operation and vsp360_call_operation." +
+        "Use this first to find the operationId you need, then vsponeblock_describe_operation and vsponeblock_call_operation." +
         (o.allowWrites ? "" : " Operations marked [write] are blocked because the server runs read-only.") +
         (o.collect
           ? " DATA COLLECTION MODE: search with `query` and `request` for every user question, even if you already know the operation; " +
-            "vsp360_call_operation only accepts operations that appeared in a search in the last few minutes."
+            "vsponeblock_call_operation only accepts operations that appeared in a search in the last few minutes."
           : ""),
       inputSchema: {
         type: "object",
         properties: {
-          tag: { type: "string", description: "API area, e.g. 'Device Registry', 'Platform Alerts', 'Users'. Case-insensitive." },
-          query: { type: "string", description: "What you want to do, in plain words (e.g. 'volumes with no host path', 'replication pairs status'). Ranked by BM25 relevance with a confidence rating." },
+          tag: { type: "string", description: "API area, e.g. 'simple/volumes', 'detail/ldevs', 'detail/pools'. Case-insensitive." },
+          query: { type: "string", description: "What you want to do, in plain words (e.g. 'free capacity of each pool', 'volumes mapped to a server'). Ranked by BM25 relevance with a confidence rating." },
           limit: { type: "integer", minimum: 1, maximum: 40, description: "Maximum results for a query (default 10)." },
           // Offered only while the decision log is on: it is recorded, never used for ranking.
           ...(o.logging
@@ -40,27 +40,28 @@ export function metaTools(o: ToolOptions): Tool[] {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     {
-      name: "vsp360_describe_operation",
+      name: "vsponeblock_describe_operation",
       description:
-        "Show everything needed to call one VSP 360 operation: method and path, required permissions and prerequisites, " +
+        "Show everything needed to call one VSP One Block operation: method and path, required permissions and prerequisites, " +
         "parameters, request body schema and response schema.",
       inputSchema: {
         type: "object",
         properties: {
-          operationId: { type: "string", description: "operationId from vsp360_list_operations" },
-          resourceType: { type: "string", description: "analyticsRunQuery only: an MQL resource type (e.g. raidPort, raidPool, vm) to list all its attributes and relations." },
+          operationId: { type: "string", description: "operationId from vsponeblock_list_operations" },
         },
         required: ["operationId"],
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     {
-      name: "vsp360_call_operation",
+      name: "vsponeblock_call_operation",
       description:
-        "Call any VSP 360 REST API operation by operationId. Authentication is handled automatically. " +
+        "Call any VSP One Block REST API operation by operationId. Authentication is handled automatically. " +
         "Pass path, query and header parameters by name in `params`, and the JSON request body in `body`. " +
-        "Collections are paginated with limit/offset (max 100 per page); set all_pages to follow the `next` link. " +
-        "Binary responses (ZIP, gzip, CSV downloads) are saved to the download folder and the file path is returned." +
+        "Lists are filtered with query parameters (e.g. count, startVolumeId, poolId); describe an operation to see them. " +
+        "Detail (non-simple) write operations run as asynchronous jobs that return a job: pass the header parameters " +
+        "Response-Job-Status=\"Completed\" and Response-Max-Wait (seconds) to wait for it, or follow it up with getJob. " +
+        "Binary responses (configuration reports, key backups) are saved to the download folder and the file path is returned." +
         (o.allowWrites ? "" : " Only read operations are allowed; the server runs read-only."),
       inputSchema: {
         type: "object",

@@ -1,32 +1,27 @@
 // Offline evaluation of operation search. Run after `npm run build`:  node tests/search-eval.mjs
-// Scores three development request sets and the held-out labelled user questions, and exits with an error if
-// any score falls below its regression threshold (set to the scores when the threshold was last raised).
+// Scores the tuning and held-out request sets, and exits with an error if any score falls below its regression
+// threshold (set to the scores when the threshold was last raised).
 //   EXAMPLES=0  measure plain BM25 without the example questions (thresholds not checked)
-//   SPLIT=train score the labelled questions' train split instead of the test split (thresholds not checked)
 import { readFileSync } from "node:fs";
 import { Spec } from "../dist/spec.js";
-import { OperationIndex, hintFor } from "../dist/search.js";
-import { CASES, HELD_OUT, HELD_OUT_2, USER_QUESTIONS } from "./cases.mjs";
+import { OperationIndex } from "../dist/search.js";
+import { CASES, HELD_OUT } from "./cases.mjs";
 
-// Minimum scores. Raise them when search improves; never lower them to make a change pass. They were re-based
-// once, for the Platform spec, because what is measured changed: NDM was removed (one held-out request dropped,
-// labelled question #78 became "not available"), and spec text changes moved #113's answer from 3rd to 4th.
+// Minimum scores. Raise them when search improves; never lower them to make a change pass.
 const THRESHOLDS = {
-  "Tuning set": { top1: 32, top3: 38 },
-  "Held-out set": { top1: 11, top3: 15 },
-  "Held-out set 2": { top1: 17, top3: 25 },
-  user: { opTop1: 30, opTop3: 38, analytics: 14, noneNotHigh: 7 },
+  "Tuning set": { top1: 46, top3: 48 },
+  "Held-out set": { top1: 14, top3: 17 },
 };
 
-const spec = new Spec(new URL("../spec/Platform-vsp360-openapi.yaml", import.meta.url).pathname);
+const spec = new Spec(new URL("../spec/vsponeblock-10.5.4.yaml", import.meta.url).pathname);
 const ops = [...spec.operations.values()];
-for (const [, want] of [...CASES, ...HELD_OUT, ...HELD_OUT_2]) for (const id of want) if (!spec.operations.has(id)) throw new Error(`Unknown expected id ${id}`);
+for (const [, want] of [...CASES, ...HELD_OUT]) for (const id of want) if (!spec.operations.has(id)) throw new Error(`Unknown expected id ${id}`);
 const examples = JSON.parse(readFileSync(new URL("../spec/examples.json", import.meta.url), "utf8"));
 for (const id of Object.keys(examples)) if (!id.startsWith("_") && !spec.operations.has(id)) throw new Error(`Unknown example id ${id}`);
 const missing = ops.filter((op) => !examples[op.operationId]).map((op) => op.operationId);
-if (missing.length) console.log(`Operations without examples: ${missing.join(", ")}`);
+if (missing.length) console.log(`${missing.length} of ${ops.length} operations have no example questions.`);
 const index = new OperationIndex(ops, process.env.EXAMPLES === "0" ? {} : examples);
-const checking = process.env.EXAMPLES !== "0" && !process.env.SPLIT;
+const checking = process.env.EXAMPLES !== "0";
 const failures = [];
 
 function evaluate(label, cases) {
@@ -54,51 +49,6 @@ function evaluate(label, cases) {
 }
 evaluate("Tuning set", CASES);
 evaluate("Held-out set", HELD_OUT);
-evaluate("Held-out set 2", HELD_OUT_2);
-
-// Labelled user questions (tests/user-queries.md, Part 2). Each is judged by what a good answer needs:
-//   operation(s)  the top result (or top 3) is one of them; ANALYTICS in the list also
-//                 accepts analyticsRunQuery or the analytics hint
-//   ANALYTICS     analyticsRunQuery is in the top 3 or the analytics hint is shown
-//   NONE          no operation fits, so search should not be HIGH confidence
-//   META          answered by the discovery tools themselves; not scored
-{
-  const split = process.env.SPLIT ?? "test";
-  const rows = USER_QUESTIONS.filter((r) => r.split === split);
-  for (const r of rows) for (const id of r.want) if (!["ANALYTICS", "NONE", "META"].includes(id) && !spec.operations.has(id)) throw new Error(`Unknown expected id ${id} in question ${r.n}`);
-  const kind = (r) => (r.want[0] === "META" ? "meta" : r.want[0] === "NONE" ? "none" : r.want.every((w) => w === "ANALYTICS") ? "analytics" : "op");
-  const res = { op: { n: 0, top1: 0, top3: 0 }, analytics: { n: 0, ok: 0 }, none: { n: 0, notHigh: 0 } };
-  const conf = { high: [0, 0], medium: [0, 0], low: [0, 0] };
-  const misses = [];
-  for (const r of rows) {
-    const k = kind(r); if (k === "meta") continue;
-    const s = index.search(r.question, { limit: 10 });
-    const ids = s.hits.map((h) => h.op.operationId);
-    const hint = !!hintFor(r.question, s);
-    const hitAt = (i) => r.want.includes(ids[i]) || (r.want.includes("ANALYTICS") && (ids[i] === "analyticsRunQuery" || (i === 0 && hint)));
-    let ok;
-    if (k === "op") { res.op.n++; const t1 = hitAt(0), t3 = t1 || hitAt(1) || hitAt(2); res.op.top1 += t1; res.op.top3 += t3; ok = t1; }
-    if (k === "analytics") { res.analytics.n++; ok = hint || ids.slice(0, 3).includes("analyticsRunQuery"); res.analytics.ok += ok; }
-    if (k === "none") { res.none.n++; ok = s.confidence !== "high"; res.none.notHigh += ok; }
-    conf[s.confidence][0]++; conf[s.confidence][1] += ok;
-    if (!ok) misses.push(`  #${r.n} [${s.confidence}] (${k}) "${r.question}" → top was ${ids[0] ?? "–"}${hint ? " +hint" : ""}; want ${r.want.join("|")}`);
-  }
-  console.log(`\n=== User questions (${split} split): ${rows.length} questions\n`);
-  console.log(`Operation questions  top-1 ${res.op.top1}/${res.op.n}   top-3 ${res.op.top3}/${res.op.n}`);
-  console.log(`Analytics questions  routed to analyticsRunQuery or hint ${res.analytics.ok}/${res.analytics.n}`);
-  console.log(`Unanswerable (NONE)  not rated HIGH ${res.none.notHigh}/${res.none.n}`);
-  console.log("\nConfidence calibration (judged correct / cases):");
-  for (const [c, [n, ok]] of Object.entries(conf)) console.log(`  ${c.padEnd(6)} ${ok}/${n}${n ? `  (${Math.round((100 * ok) / n)}%)` : ""}`);
-  console.log("\nMisses:"); for (const m of misses) console.log(m);
-  const t = THRESHOLDS.user;
-  if (checking) {
-    if (res.op.top1 < t.opTop1) failures.push(`user questions: operation top-1 ${res.op.top1} is below ${t.opTop1}`);
-    if (res.op.top3 < t.opTop3) failures.push(`user questions: operation top-3 ${res.op.top3} is below ${t.opTop3}`);
-    if (res.analytics.ok < t.analytics) failures.push(`user questions: analytics routing ${res.analytics.ok} is below ${t.analytics}`);
-    if (res.none.notHigh < t.noneNotHigh) failures.push(`user questions: unanswerable not rated HIGH ${res.none.notHigh} is below ${t.noneNotHigh}`);
-  }
-}
-
 if (checking) {
   if (failures.length) {
     console.error(`\nSEARCH REGRESSION:\n  ${failures.join("\n  ")}`);

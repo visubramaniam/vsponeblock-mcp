@@ -1,4 +1,4 @@
-// HTTP client for VSP 360: handles the client-credentials token, TLS options,
+// HTTP client for the VSP One Block REST API (Configuration Manager): handles the session token, TLS options,
 // pagination, file uploads and binary downloads.
 import { readFileSync, mkdirSync, writeFileSync, openAsBlob, existsSync, realpathSync, createWriteStream } from "node:fs";
 import { basename, join, resolve, sep, isAbsolute } from "node:path";
@@ -6,31 +6,32 @@ import { homedir } from "node:os";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Agent, fetch, FormData, type Response } from "undici";
-import { type Operation, isMultipart, fileFields, toolParamName } from "./spec.js";
+import { type Operation, type Auth, isMultipart, fileFields, toolParamName } from "./spec.js";
 
 type Json = any;
 
 interface Config {
+  /** The array's REST API root, ending in /ConfigurationManager. */
   baseUrl: string;
-  clientId: string;
-  clientSecret: string;
-  scope?: string;
+  user: string;
+  password: string;
+  /** Idle timeout asked for when opening a session, in seconds (1-300). */
+  aliveTime: number;
   insecureTls: boolean;
   caCertFile?: string;
   timeoutMs: number;
   maxResponseChars: number;
   downloadDir: string;
-  /** save_to may point anywhere (VSP360_SAVE_ANYWHERE=true); otherwise it must stay inside downloadDir. */
+  /** save_to may point anywhere (VSPONEBLOCK_SAVE_ANYWHERE=true); otherwise it must stay inside downloadDir. */
   saveAnywhere: boolean;
   /** Multipart uploads must come from inside this folder, when set. */
   uploadDir?: string;
   pathRewrites: [string, string][];
 }
 
-// The Data Protection service's pagination links leave out the gateway prefix it is served under:
-// `next` points at /api/v1/protection/... (over http) rather than /dataprotection/api/v1/protection/...
-// The rewrite re-homes those links. It also covers specs older than the Platform spec, whose paths lacked the prefix.
-const DEFAULT_PATH_REWRITES = "/api/v1/protection=/dataprotection/api/v1/protection";
+// No path is rewritten by default. VSPONEBLOCK_PATH_REWRITES re-homes paths when the API sits behind a gateway
+// that serves it under another prefix.
+const DEFAULT_PATH_REWRITES = "";
 
 function parseRewrites(spec: string): [string, string][] {
   return spec
@@ -39,28 +40,36 @@ function parseRewrites(spec: string): [string, string][] {
     .filter(Boolean)
     .map((r) => {
       const i = r.indexOf("=");
-      if (i <= 0) throw new Error(`Invalid VSP360_PATH_REWRITES entry "${r}" (expected /from=/to)`);
+      if (i <= 0) throw new Error(`Invalid VSPONEBLOCK_PATH_REWRITES entry "${r}" (expected /from=/to)`);
       return [r.slice(0, i), r.slice(i + 1)] as [string, string];
     });
 }
 
 export function loadConfig(env = process.env): Config {
-  const missing = ["VSP360_URL", "VSP360_CLIENT_ID", "VSP360_CLIENT_SECRET"].filter((k) => !env[k]);
+  const missing = ["VSPONEBLOCK_URL", "VSPONEBLOCK_USER", "VSPONEBLOCK_PASSWORD"].filter((k) => !env[k]);
   if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  const aliveTime = Math.trunc(Number(env.VSPONEBLOCK_SESSION_ALIVE_TIME ?? 300));
+  if (!(aliveTime >= 1 && aliveTime <= 300)) throw new Error(`VSPONEBLOCK_SESSION_ALIVE_TIME must be 1-300 seconds (got "${env.VSPONEBLOCK_SESSION_ALIVE_TIME}")`);
   return {
-    baseUrl: env.VSP360_URL!.replace(/\/+$/, ""),
-    clientId: env.VSP360_CLIENT_ID!,
-    clientSecret: env.VSP360_CLIENT_SECRET!,
-    scope: env.VSP360_SCOPE || undefined,
-    insecureTls: env.VSP360_INSECURE_TLS === "true",
-    caCertFile: env.VSP360_CA_CERT || undefined,
-    timeoutMs: Number(env.VSP360_TIMEOUT_MS ?? 120_000),
-    maxResponseChars: Number(env.VSP360_MAX_RESPONSE_CHARS ?? 60_000),
-    downloadDir: resolve(expandHome(env.VSP360_DOWNLOAD_DIR || join(homedir(), "Downloads", "vsp360-mcp"))),
-    saveAnywhere: env.VSP360_SAVE_ANYWHERE === "true",
-    uploadDir: env.VSP360_UPLOAD_DIR ? resolve(expandHome(env.VSP360_UPLOAD_DIR)) : undefined,
-    pathRewrites: parseRewrites(env.VSP360_PATH_REWRITES ?? DEFAULT_PATH_REWRITES),
+    baseUrl: apiRoot(env.VSPONEBLOCK_URL!),
+    user: env.VSPONEBLOCK_USER!,
+    password: env.VSPONEBLOCK_PASSWORD!,
+    aliveTime,
+    insecureTls: env.VSPONEBLOCK_INSECURE_TLS === "true",
+    caCertFile: env.VSPONEBLOCK_CA_CERT || undefined,
+    timeoutMs: Number(env.VSPONEBLOCK_TIMEOUT_MS ?? 120_000),
+    maxResponseChars: Number(env.VSPONEBLOCK_MAX_RESPONSE_CHARS ?? 60_000),
+    downloadDir: resolve(expandHome(env.VSPONEBLOCK_DOWNLOAD_DIR || join(homedir(), "Downloads", "vsponeblock-mcp"))),
+    saveAnywhere: env.VSPONEBLOCK_SAVE_ANYWHERE === "true",
+    uploadDir: env.VSPONEBLOCK_UPLOAD_DIR ? resolve(expandHome(env.VSPONEBLOCK_UPLOAD_DIR)) : undefined,
+    pathRewrites: parseRewrites(env.VSPONEBLOCK_PATH_REWRITES ?? DEFAULT_PATH_REWRITES),
   };
+}
+
+/** The REST API root for a URL: `https://array` and `https://array/ConfigurationManager/` both give `https://array/ConfigurationManager`. */
+export function apiRoot(url: string): string {
+  const base = url.replace(/\/+$/, "");
+  return /\/ConfigurationManager$/i.test(base) ? base : `${base}/ConfigurationManager`;
 }
 
 export interface CallArgs {
@@ -93,10 +102,10 @@ function isInside(p: string, dir: string): boolean {
 /** A problem with the request (file paths, missing body) to report as a failed call rather than a crash. */
 class RequestError extends Error {}
 
-export class Vsp360Client {
+export class VspOneBlockClient {
   private agent: Agent;
-  private token?: { value: string; expiresAt: number };
-  private pendingToken?: Promise<string>;
+  private session?: { token: string; id: number; lastUsed: number };
+  private pendingSession?: Promise<string>;
 
   constructor(private cfg: Config) {
     this.agent = new Agent({
@@ -111,33 +120,60 @@ export class Vsp360Client {
     });
   }
 
-  private async getToken(force = false): Promise<string> {
-    if (!force && this.token && Date.now() < this.token.expiresAt) return this.token.value;
-    this.pendingToken ??= this.fetchToken().finally(() => (this.pendingToken = undefined));
-    return this.pendingToken;
+  private basic(): string {
+    return `Basic ${Buffer.from(`${this.cfg.user}:${this.cfg.password}`).toString("base64")}`;
   }
 
-  private async fetchToken(): Promise<string> {
-    const form = new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: this.cfg.clientId,
-      client_secret: this.cfg.clientSecret,
-    });
-    if (this.cfg.scope) form.set("scope", this.cfg.scope);
-    const res = await fetch(`${this.cfg.baseUrl}/api/v1/vsp360/auth/token`, {
+  /**
+   * The session token, opening a session when there is none or the current one may have idled out. A session ends
+   * after aliveTime seconds without a request, so one unused for nearly that long is replaced rather than risked.
+   */
+  private async getToken(force = false): Promise<string> {
+    const s = this.session;
+    if (!force && s && Date.now() - s.lastUsed < (this.cfg.aliveTime - Math.min(30, this.cfg.aliveTime / 2)) * 1000) {
+      s.lastUsed = Date.now();
+      return s.token;
+    }
+    this.pendingSession ??= this.openSession().finally(() => (this.pendingSession = undefined));
+    return this.pendingSession;
+  }
+
+  private async openSession(): Promise<string> {
+    const res = await fetch(`${this.cfg.baseUrl}/v1/objects/sessions`, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-      body: form.toString(),
+      headers: { authorization: this.basic(), "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ aliveTime: this.cfg.aliveTime }),
       dispatcher: this.agent,
       signal: AbortSignal.timeout(this.cfg.timeoutMs),
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`Token request failed (HTTP ${res.status}): ${text.slice(0, 1000)}`);
+    if (res.status === 503) throw new Error(`Cannot open a session: the storage system already has its maximum of 64 sessions (HTTP 503). Wait for idle sessions to time out and try again. ${text.slice(0, 500)}`);
+    if (!res.ok) throw new Error(`Session request failed (HTTP ${res.status}): ${text.slice(0, 1000)}`);
     const data = JSON.parse(text);
-    const ttl = Number(data.expires_in ?? 300);
-    // Refresh a minute early (or at half-life for very short tokens).
-    this.token = { value: data.access_token, expiresAt: Date.now() + Math.max(ttl - 60, ttl / 2) * 1000 };
-    return this.token.value;
+    this.session = { token: data.token, id: data.sessionId, lastUsed: Date.now() };
+    return data.token;
+  }
+
+  /** Discards the session, freeing one of the array's 64 session slots. Errors are ignored: the session times out anyway. */
+  async close(): Promise<void> {
+    const s = this.session;
+    this.session = undefined;
+    if (!s) return;
+    try {
+      const res = await fetch(`${this.cfg.baseUrl}/v1/objects/sessions/${s.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Session ${s.token}`, accept: "application/json" },
+        dispatcher: this.agent,
+        signal: AbortSignal.timeout(5000),
+      });
+      await res.body?.cancel();
+    } catch {}
+  }
+
+  private async authHeader(auth: Auth, force: boolean): Promise<Record<string, string>> {
+    if (auth === "none") return {};
+    if (auth === "basic") return { authorization: this.basic() };
+    return { authorization: `Session ${await this.getToken(force)}` };
   }
 
   async call(op: Operation, args: CallArgs): Promise<CallResult> {
@@ -259,16 +295,21 @@ export class Vsp360Client {
     return path;
   }
 
-  /** Re-homes a server-supplied link onto the configured base URL and gateway prefix. */
+  /**
+   * Re-homes a server-supplied link onto the configured base URL and gateway prefix. A link that already carries
+   * the base URL's path (/ConfigurationManager/...) has it taken off first, so it is not added twice.
+   */
   private followable(link?: string): string | undefined {
     if (!link) return undefined;
     const u = new URL(link);
-    return `${this.cfg.baseUrl}${this.rewritePath(u.pathname)}${u.search}`;
+    const root = new URL(this.cfg.baseUrl).pathname.replace(/\/+$/, "");
+    const path = root && (u.pathname === root || u.pathname.startsWith(root + "/")) ? u.pathname.slice(root.length) : u.pathname;
+    return `${this.cfg.baseUrl}${this.rewritePath(path)}${u.search}`;
   }
 
   /**
    * A local file for a multipart upload. Uploads are chosen by the model, so content it reads from the API could
-   * try to steer an upload; hidden files and folders (~/.ssh, .env, ...) are refused, and with VSP360_UPLOAD_DIR
+   * try to steer an upload; hidden files and folders (~/.ssh, .env, ...) are refused, and with VSPONEBLOCK_UPLOAD_DIR
    * set, so is anything outside that folder.
    */
   private uploadPath(p: string): string {
@@ -277,9 +318,9 @@ export class Vsp360Client {
     const real = realpathSync(full);
     if (this.cfg.uploadDir) {
       const root = existsSync(this.cfg.uploadDir) ? realpathSync(this.cfg.uploadDir) : this.cfg.uploadDir;
-      if (!isInside(real, root)) throw new RequestError(`Upload refused: ${full} is outside VSP360_UPLOAD_DIR (${this.cfg.uploadDir}).`);
+      if (!isInside(real, root)) throw new RequestError(`Upload refused: ${full} is outside VSPONEBLOCK_UPLOAD_DIR (${this.cfg.uploadDir}).`);
     } else if (real.split(sep).some((seg) => seg.startsWith("."))) {
-      throw new RequestError(`Upload refused: ${full} is a hidden file or inside a hidden folder. Set VSP360_UPLOAD_DIR to choose the folder uploads may come from.`);
+      throw new RequestError(`Upload refused: ${full} is a hidden file or inside a hidden folder. Set VSPONEBLOCK_UPLOAD_DIR to choose the folder uploads may come from.`);
     }
     return real;
   }
@@ -313,10 +354,10 @@ export class Vsp360Client {
     return typeof args.body === "string" ? args.body : JSON.stringify(args.body);
   }
 
-  /** Sends the request, retrying once with a fresh token on 401. The body is left unread for the caller. */
+  /** Sends the request, retrying once with a new session on 401. The body is left unread for the caller. */
   private async send(op: Operation, url: string, headers: Record<string, string>, args: CallArgs, retried = false): Promise<Response> {
     const body = await this.buildBody(op, args);
-    const reqHeaders: Record<string, string> = { ...headers, authorization: `Bearer ${await this.getToken(retried)}` };
+    const reqHeaders: Record<string, string> = { ...headers, ...(await this.authHeader(op.auth, retried)) };
     if (body !== undefined && !(body instanceof FormData)) reqHeaders["content-type"] = op.bodyContentType!;
     const res = await fetch(url, {
       method: op.method,
@@ -325,7 +366,7 @@ export class Vsp360Client {
       dispatcher: this.agent,
       signal: isMultipart(op) ? undefined : AbortSignal.timeout(this.cfg.timeoutMs),
     });
-    if (res.status === 401 && !retried) {
+    if (res.status === 401 && !retried && op.auth === "session") {
       await res.body?.cancel();
       return this.send(op, url, headers, args, true);
     }
@@ -376,7 +417,7 @@ export class Vsp360Client {
 
   /**
    * Where to save a response. save_to is chosen by the model, so it is kept inside the download folder (relative
-   * paths are taken from there) unless VSP360_SAVE_ANYWHERE=true, and an existing file is never overwritten.
+   * paths are taken from there) unless VSPONEBLOCK_SAVE_ANYWHERE=true, and an existing file is never overwritten.
    * Without save_to, the server's file name (or a generated one) is used in the download folder, made unique.
    */
   private saveTarget(op: Operation, res: Response, target?: string): string {
@@ -385,7 +426,7 @@ export class Vsp360Client {
       const t = expandHome(target);
       const file = resolve(isAbsolute(t) ? t : join(dir, t));
       if (!this.cfg.saveAnywhere && !isInside(file, dir)) {
-        throw new RequestError(`save_to refused: ${file} is outside the download folder ${dir}. Use a file name or a path inside it (or set VSP360_SAVE_ANYWHERE=true).`);
+        throw new RequestError(`save_to refused: ${file} is outside the download folder ${dir}. Use a file name or a path inside it (or set VSPONEBLOCK_SAVE_ANYWHERE=true).`);
       }
       if (existsSync(file)) throw new RequestError(`save_to refused: ${file} already exists. Choose a new file name.`);
       mkdirSync(resolve(file, ".."), { recursive: true });

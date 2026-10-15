@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Builds the release packages into release/ from an already-built dist/ (run `npm run package`):
 //
-//   vsp360-mcp-<version>.tgz                    npm package: `npm install -g <file or URL>` (needs Node.js 20+)
-//   vsp360-mcp-<version>.mcpb                   Claude Desktop extension: double-click to install
-//   vsp360-mcp-<version>-<platform>.tar.gz|zip  standalone: the server plus a Node.js runtime, nothing to install
+//   vsponeblock-mcp-<version>.tgz                    npm package: `npm install -g <file or URL>` (needs Node.js 20+)
+//   vsponeblock-mcp-<version>.mcpb                   Claude Desktop extension: double-click to install
+//   vsponeblock-mcp-<version>-<platform>.tar.gz|zip  standalone: the server plus a Node.js runtime, nothing to install
 //   SHA256SUMS                                  checksums of the files above
 //
 // Options:
@@ -68,7 +68,7 @@ function buildMcpb(app) {
   cpSync(app, dir, { recursive: true });
   const manifest = JSON.parse(readFileSync(join(root, "packaging", "mcpb", "manifest.json"), "utf8"));
   writeFileSync(join(dir, "manifest.json"), JSON.stringify({ ...manifest, version }, null, 2) + "\n");
-  run(join(root, "node_modules", ".bin", "mcpb"), ["pack", dir, join(out, `vsp360-mcp-${version}.mcpb`)]);
+  run(join(root, "node_modules", ".bin", "mcpb"), ["pack", dir, join(out, `vsponeblock-mcp-${version}.mcpb`)]);
 }
 
 /** Downloads a Node.js release archive once and checks it against the release's SHASUMS256.txt. */
@@ -91,8 +91,8 @@ async function nodeArchive(target) {
 }
 
 const UNIX_LAUNCHER = `#!/bin/sh
-# Starts vsp360-mcp with the Node.js runtime bundled next to it. Works through symlinks,
-# e.g. ln -s /opt/vsp360-mcp/bin/vsp360-mcp /usr/local/bin/vsp360-mcp
+# Starts vsponeblock-mcp with the Node.js runtime bundled next to it. Works through symlinks,
+# e.g. ln -s /opt/vsponeblock-mcp/bin/vsponeblock-mcp /usr/local/bin/vsponeblock-mcp
 self=$0
 while [ -L "$self" ]; do
   link=$(readlink "$self")
@@ -103,14 +103,14 @@ exec "$here/runtime/node" "$here/dist/index.js" "$@"
 `;
 
 const WINDOWS_LAUNCHER = `@echo off\r
-rem Starts vsp360-mcp with the Node.js runtime bundled next to it.\r
+rem Starts vsponeblock-mcp with the Node.js runtime bundled next to it.\r
 "%~dp0..\\runtime\\node.exe" "%~dp0..\\dist\\index.js" %*\r
 `;
 
 async function buildStandalone(app, target) {
   log(`standalone ${target} (Node.js ${NODE_VERSION})`);
   const windows = target.startsWith("win");
-  const name = `vsp360-mcp-${version}-${target}`;
+  const name = `vsponeblock-mcp-${version}-${target}`;
   const dir = join(stage, name);
   cpSync(app, dir, { recursive: true });
   mkdirSync(join(dir, "runtime"));
@@ -127,11 +127,11 @@ async function buildStandalone(app, target) {
   chmodSync(join(dir, "runtime", exe), 0o755);
 
   if (windows) {
-    writeFileSync(join(dir, "bin", "vsp360-mcp.cmd"), WINDOWS_LAUNCHER);
+    writeFileSync(join(dir, "bin", "vsponeblock-mcp.cmd"), WINDOWS_LAUNCHER);
     run("zip", ["-qr", join(out, `${name}.zip`), name], stage);
   } else {
-    writeFileSync(join(dir, "bin", "vsp360-mcp"), UNIX_LAUNCHER);
-    chmodSync(join(dir, "bin", "vsp360-mcp"), 0o755);
+    writeFileSync(join(dir, "bin", "vsponeblock-mcp"), UNIX_LAUNCHER);
+    chmodSync(join(dir, "bin", "vsponeblock-mcp"), 0o755);
     // macOS tar would otherwise store extended attributes that GNU tar warns about on every file.
     const noXattrs = process.platform === "darwin" ? ["--no-xattrs", "--no-mac-metadata"] : [];
     run("tar", [...noXattrs, "-czf", join(out, `${name}.tar.gz`), "-C", stage, name]);

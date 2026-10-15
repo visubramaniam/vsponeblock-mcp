@@ -20,8 +20,8 @@ permissions:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
-  IMAGE: docker.io/subramaniamv/vsp360-mcp
-  GHCR_IMAGE: ghcr.io/visubramaniam/vsp360-mcp
+  IMAGE: docker.io/subramaniamv/vsponeblock-mcp
+  GHCR_IMAGE: ghcr.io/visubramaniam/vsponeblock-mcp
 
 jobs:
   packages:
@@ -85,14 +85,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.packages.outputs.version }}
         run: |
-          if npm view "vsp360-mcp@$VERSION" version >/dev/null 2>&1; then
-            echo "vsp360-mcp@$VERSION is already on npm; nothing to publish"
+          if npm view "vsponeblock-mcp@$VERSION" version >/dev/null 2>&1; then
+            echo "vsponeblock-mcp@$VERSION is already on npm; nothing to publish"
             exit 0
           fi
-          gh release download "$TAG" --pattern "vsp360-mcp-$VERSION.tgz" --pattern SHA256SUMS
-          grep " vsp360-mcp-$VERSION.tgz$" SHA256SUMS | sha256sum -c -
+          gh release download "$TAG" --pattern "vsponeblock-mcp-$VERSION.tgz" --pattern SHA256SUMS
+          grep " vsponeblock-mcp-$VERSION.tgz$" SHA256SUMS | sha256sum -c -
           npm install -g npm@11.6.2
-          npm publish "vsp360-mcp-$VERSION.tgz" --access public
+          npm publish "vsponeblock-mcp-$VERSION.tgz" --access public
 
   windows:
     # Tests the release's Windows packages on Windows x64 and arm64 machines.

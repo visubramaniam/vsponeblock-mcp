@@ -10,29 +10,29 @@ const K1 = 1.2;
 const B = 0.75;
 
 const STOPWORDS = new Set(
-  "a an and are as at be by can do does for from get give how i in is it list me my of on or show tell the this to what when where which who why with all any vsp 360 vsp360 hitachi api".split(" "),
+  "a an and are as at be by can do does for from get give how i in is it list me my of on or show tell the this to what when where which who why with all any vsp one block hitachi api".split(" "),
 );
 
 // Storage vocabulary people use vs. the words in the spec.
 const SYNONYMS: Record<string, string[]> = {
-  volume: ["ldev"], volumes: ["ldev"], lun: ["ldev", "lu"], disk: ["ldev"],
-  array: ["storage", "device"], arrays: ["storage", "device"], system: ["storage", "device"],
-  san: ["switch", "fabric"], fabric: ["switch"],
-  server: ["host"], servers: ["host"],
-  snapshot: ["copies", "copy"], snapshots: ["copies", "copy"], replication: ["copies", "copy", "pair"], gad: ["replication", "copies"],
-  latency: ["response", "metric"], performance: ["metric", "query"], iops: ["metric", "query", "analytics"],
-  capacity: ["usage", "billing", "report", "inventory"], usage: ["report"],
-  user: ["users", "identity"], login: ["auth", "token"], sso: ["single", "sign"],
-  alert: ["alerts"], alarm: ["alerts"], silence: ["silences"], mute: ["silence", "silences"], suppress: ["silence", "silences"],
-  log: ["logs"], logs: ["log"], diagnostic: ["diagnostics"], bundle: ["diagnostics"],
+  volume: ["ldev"], volumes: ["ldev"], lun: ["ldev", "lun"], luns: ["ldev", "lun"], disk: ["ldev", "drive"], ldev: ["volume"],
+  array: ["storage"], system: ["storage"], box: ["storage"],
+  server: ["host"], servers: ["host"], host: ["server", "host group"], hosts: ["server", "host group"],
+  initiator: ["wwn", "iscsi", "host"], wwn: ["wwn", "host"], iqn: ["iscsi"],
+  snapshot: ["snapshot", "thin image"], snapshots: ["snapshot", "thin image"], clone: ["snapshot", "shadow image"],
+  replication: ["pair", "copy"], gad: ["global active device", "pair"], truecopy: ["remote copy", "pair"], mirror: ["pair", "copy"],
+  latency: ["response", "performance"], performance: ["performance", "monitor"], iops: ["performance", "monitor"], throughput: ["performance"],
+  capacity: ["pool", "usage"], free: ["capacity", "pool"], usage: ["capacity"],
+  dedupe: ["deduplication", "saving"], compression: ["saving"],
+  login: ["session"], user: ["user", "account"], users: ["user", "account"], role: ["user group"],
+  alert: ["alert", "sim"], alerts: ["alert", "sim"], alarm: ["alert", "sim"], error: ["sim", "health"], errors: ["sim", "health"],
+  health: ["health status"], healthy: ["health status"], status: ["health status"],
+  firmware: ["version", "microcode"], microcode: ["version"], version: ["version"],
   cert: ["certificate"], tls: ["certificate"], ssl: ["certificate"],
-  upgrade: ["upgrades"], health: ["system", "cluster"], healthy: ["system", "cluster", "health"],
-  version: ["about", "product"], build: ["about", "product"],
-  permission: ["authorization", "access"], permissions: ["authorization", "access"],
-  ldap: ["directory", "directories"], ad: ["directory"], active: [], directory: ["directories"],
-  esxi: ["hypervisor"], vcenter: ["hypervisor"], hyperv: ["hypervisor"], vmware: ["hypervisor"],
-  register: ["enroll", "registration"], registered: ["enroll", "inventory", "registration"], registration: ["enroll"],
-  remove: ["delete"], unregister: ["delete"], autoscaler: ["vpa", "vpas"],
+  encryption: ["encryption key"], kms: ["key management"],
+  qos: ["qos", "quality"], limit: ["qos", "upper"], zone: ["host group"], mapping: ["lun", "path"],
+  remove: ["delete"], unmap: ["delete", "lun"], map: ["lun", "path"], attach: ["lun", "connection"], detach: ["delete", "connection"],
+  expand: ["expand"], grow: ["expand"], resize: ["expand"], shrink: ["shrink"],
 };
 
 // Verbs that reveal whether the caller wants to read or to change something.
@@ -83,24 +83,6 @@ function expandQuery(query: string): { terms: string[]; original: Set<string> } 
 }
 
 export type Confidence = "high" | "medium" | "low";
-
-// Questions about performance, history or topology are answered by the Analytics
-// query API (MQL), not by a dedicated REST operation, so plain search ranks them poorly.
-const ANALYTICS_HINT = /\b(iops|latency|response time|throughput|performance|utili[sz]ation|queue|trend|history|over time|wwns?|hba|initiator|switch ports?|zones?|lun paths?|pools?|ldevs?|host groups?|snapshots? count|pairs?|vm|vms)\b/i;
-
-function analyticsHint(query: string): string | null {
-  return ANALYTICS_HINT.test(query)
-    ? "This sounds like a performance, capacity-history or topology question. Those are usually answered with analyticsRunQuery (MQL) rather than a dedicated operation: describe analyticsRunQuery for the syntax."
-    : null;
-}
-
-/**
- * The analytics hint shown with a search result: only when the result is not HIGH confidence. The decision model
- * uses whether it was shown as a feature, so the server, the evaluation and the training script all call this.
- */
-export function hintFor(query: string, result: Pick<SearchResult, "confidence">): string | null {
-  return result.confidence !== "high" ? analyticsHint(query) : null;
-}
 
 interface SearchHit {
   op: Operation;

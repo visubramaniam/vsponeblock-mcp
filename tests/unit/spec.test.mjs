@@ -6,13 +6,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Spec, SPEC_CACHE, parseYaml, toolParamName } from "../../dist/spec.js";
 
-const SPEC_FILE = new URL("../../spec/Platform-vsp360-openapi.yaml", import.meta.url).pathname;
+const SPEC_FILE = new URL("../../spec/vsponeblock-10.5.4.yaml", import.meta.url).pathname;
 const spec = new Spec(SPEC_FILE);
 
-test("indexes 264 operations, hides the token endpoint, and flags exactly one secret read", () => {
-  assert.equal(spec.operations.size, 264);
-  assert.ok(!spec.operations.has("vsp360PostAuthToken"));
-  assert.deepEqual([...spec.operations.values()].filter((o) => o.secret).map((o) => o.operationId), ["vsp360GetServiceAccountSecret"]);
+test("indexes 425 operations and hides the session endpoints the server manages itself", () => {
+  assert.equal(spec.operations.size, 425);
+  assert.ok(!spec.operations.has("postSession"));
+  assert.ok(!spec.operations.has("deleteSession"));
+  assert.ok(spec.operations.has("getSessionList"));
+  assert.equal([...spec.operations.values()].filter((o) => o.secret).length, 0);
+});
+
+test("each operation's authentication follows its security requirement", () => {
+  const by = (auth) => [...spec.operations.values()].filter((o) => o.auth === auth).map((o) => o.operationId).sort();
+  assert.deepEqual(by("none"), ["getStorageList", "getVersion", "guiSettingsGet"]);
+  assert.deepEqual(by("basic"), ["dkcPowerStatesInstanceGet", "dkcPowerStatesInstancePatch"]);
+  assert.equal(by("session").length, 420);
 });
 
 test("read-only operations are GETs plus the listed query/validate POSTs", () => {
@@ -21,8 +30,7 @@ test("read-only operations are GETs plus the listed query/validate POSTs", () =>
     if (["PUT", "PATCH", "DELETE"].includes(op.method)) assert.ok(!op.readOnly, op.operationId);
   }
   const readOnlyPosts = [...spec.operations.values()].filter((o) => o.method === "POST" && o.readOnly).map((o) => o.operationId).sort();
-  assert.equal(readOnlyPosts.length, 7);
-  assert.ok(readOnlyPosts.includes("analyticsRunQuery"));
+  assert.deepEqual(readOnlyPosts, ["configurationReportsReportIdActionsDownloadInvokePost"]);
 });
 
 test("every operation has a response schema available after the document is released", () => {
@@ -43,7 +51,7 @@ test("tool-safe parameter names are valid and do not collide", () => {
 });
 
 test("$ref resolution cuts off recursion and turns nullable into a type union", () => {
-  const dir = mkdtempSync(join(tmpdir(), "vsp360-spec-"));
+  const dir = mkdtempSync(join(tmpdir(), "vsponeblock-spec-"));
   const file = join(dir, "mini.yaml");
   writeFileSync(file, `
 openapi: 3.0.3
@@ -86,26 +94,26 @@ test("the build-time cache is the bundled YAML, parsed", () => {
 });
 
 test("a changed YAML spec is parsed afresh rather than taken from the cache", () => {
-  const dir = mkdtempSync(join(tmpdir(), "vsp360-spec-"));
+  const dir = mkdtempSync(join(tmpdir(), "vsponeblock-spec-"));
   const file = join(dir, "changed.yaml");
   const yaml = readFileSync(SPEC_FILE, "utf8");
-  const summary = spec.operations.get("vsp360GetAlerts").summary;
+  const summary = spec.operations.get("getAlertList").summary;
   writeFileSync(file, yaml.replace(`summary: ${summary}`, "summary: Changed summary"));
   try {
-    assert.equal(new Spec(file).operations.get("vsp360GetAlerts").summary, "Changed summary");
+    assert.equal(new Spec(file).operations.get("getAlertList").summary, "Changed summary");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("a JSON spec loads like the YAML one", () => {
-  const dir = mkdtempSync(join(tmpdir(), "vsp360-spec-"));
+  const dir = mkdtempSync(join(tmpdir(), "vsponeblock-spec-"));
   const file = join(dir, "spec.json");
   writeFileSync(file, JSON.stringify(parseYaml(readFileSync(SPEC_FILE, "utf8"))));
   try {
     const s = new Spec(file);
     assert.deepEqual([...s.operations.keys()], [...spec.operations.keys()]);
-    assert.deepEqual(s.responseSchema(s.operations.get("vsp360GetAlerts")), spec.responseSchema(spec.operations.get("vsp360GetAlerts")));
+    assert.deepEqual(s.responseSchema(s.operations.get("getAlertList")), spec.responseSchema(spec.operations.get("getAlertList")));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

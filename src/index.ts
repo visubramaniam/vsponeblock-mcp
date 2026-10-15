@@ -1,18 +1,16 @@
 #!/usr/bin/env node
-// MCP server for the VSP 360 REST API.
+// MCP server for the VSP One Block REST API.
 //
 // Every operation in the OpenAPI spec is reachable through three discovery
 // tools (list, describe, call). Selected tags can also be exposed as one
-// direct tool per operation with VSP360_TOOLSETS.
+// direct tool per operation with VSPONEBLOCK_TOOLSETS.
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Spec, type Operation, fileFields, isMultipart } from "./spec.js";
-import { Vsp360Client, loadConfig, type CallArgs } from "./client.js";
-import { OperationIndex, hintFor } from "./search.js";
+import { VspOneBlockClient, loadConfig, type CallArgs } from "./client.js";
+import { OperationIndex } from "./search.js";
 import { DecisionLog } from "./decisionlog.js";
-import { AnalyticsFields } from "./analyticsfields.js";
-import { features as decisionFeatures, predict, type Decision, type DecisionModel } from "./decision.js";
 import { VERSION, loadServerConfig, loadOptionalJson } from "./config.js";
 import { metaTools, directTool, toolName } from "./tools.js";
 
@@ -24,7 +22,7 @@ function orExit<T>(load: () => T): T {
     return load();
   } catch (e) {
     const msg = (e as Error).message;
-    console.error(msg.startsWith("[vsp360-mcp]") ? msg : `[vsp360-mcp] cannot start: ${msg}`);
+    console.error(msg.startsWith("[vsponeblock-mcp]") ? msg : `[vsponeblock-mcp] cannot start: ${msg}`);
     process.exit(1);
   }
 }
@@ -33,44 +31,38 @@ const cfg = loadServerConfig();
 const spec = orExit(() => new Spec(cfg.specPath));
 const examples = orExit(() => loadOptionalJson<Record<string, string[]>>(cfg.examplesPath, "example questions", {}));
 const index = new OperationIndex(spec.operations.values(), examples);
-const analyticsFields = orExit(() => new AnalyticsFields(cfg.analyticsFieldsPath));
 
-// Learned decision model: suggests what to do with a search result. Shown only when VSP360_DECISION_HINT is
-// "true", or in a random half of server sessions when it is "ab"; predicted and logged whenever the
-// decision log is on, so sessions with and without the hint can be compared.
-const decisionModel = orExit(() => loadOptionalJson<DecisionModel | undefined>(cfg.decision.modelPath, "decision model", undefined));
-const showHint = !!decisionModel && (cfg.decision.hintMode === "true" || (cfg.decision.hintMode === "ab" && Math.random() < 0.5));
 const decisions = new DecisionLog(cfg.decision.logPath, cfg.decision.linkSeconds);
 // Collection mode: every search must carry the user's request, and every call must be to an operation that
 // came up in a search within the window, so each question yields a labelled search. Needs the decision log.
 const collect = decisions.enabled && cfg.decision.collect;
-if (cfg.decision.collect && !decisions.enabled) console.error("[vsp360-mcp] VSP360_DECISION_COLLECT ignored: set VSP360_DECISION_LOG to turn the decision log on");
+if (cfg.decision.collect && !decisions.enabled) console.error("[vsponeblock-mcp] VSPONEBLOCK_DECISION_COLLECT ignored: set VSPONEBLOCK_DECISION_LOG to turn the decision log on");
 
-// The client is created on first use so the server can start (and list tools) before VSP 360 is reachable,
+// The client is created on first use so the server can start (and list tools) before the storage system is reachable,
 // but the settings are checked now so a mistake shows up in the log at startup, not on the first call.
 try {
   loadConfig();
 } catch (e) {
-  console.error(`[vsp360-mcp] warning: ${(e as Error).message}. API calls will fail until this is fixed.`);
+  console.error(`[vsponeblock-mcp] warning: ${(e as Error).message}. API calls will fail until this is fixed.`);
 }
-let client: Vsp360Client | undefined;
-function getClient(): Vsp360Client {
-  client ??= new Vsp360Client(loadConfig());
+let client: VspOneBlockClient | undefined;
+function getClient(): VspOneBlockClient {
+  client ??= new VspOneBlockClient(loadConfig());
   return client;
 }
 
 /** Why an operation may not be called with the current settings, if it may not. */
 function blockedReason(op: Operation): string | undefined {
   if (!op.readOnly && !cfg.allowWrites) {
-    return `${op.operationId} (${op.method} ${op.path}) changes VSP 360 state and the server is running read-only. Set VSP360_ALLOW_WRITES=true in the MCP server configuration to enable write operations.`;
+    return `${op.operationId} (${op.method} ${op.path}) changes the storage system and the server is running read-only. Set VSPONEBLOCK_ALLOW_WRITES=true in the MCP server configuration to enable write operations.`;
   }
-  // A read-only upload (validating a CSV) still sends a local file to VSP 360, so in read-only mode it may only
+  // A read-only upload (validating a CSV) still sends a local file to the storage system, so in read-only mode it may only
   // come from the folder the user chose; otherwise a steered model could upload any non-hidden file.
   if (isMultipart(op) && !cfg.allowWrites && !cfg.uploadDirSet) {
-    return `${op.operationId} uploads a local file, which read-only mode allows only from VSP360_UPLOAD_DIR. Set VSP360_UPLOAD_DIR in the MCP server configuration to the folder uploads may come from.`;
+    return `${op.operationId} uploads a local file, which read-only mode allows only from VSPONEBLOCK_UPLOAD_DIR. Set VSPONEBLOCK_UPLOAD_DIR in the MCP server configuration to the folder uploads may come from.`;
   }
   if (op.secret && !cfg.allowSecretReads) {
-    return `${op.operationId} returns a credential in clear text, which would then be part of the conversation. It is blocked unless VSP360_ALLOW_SECRET_READS=true is set in the MCP server configuration.`;
+    return `${op.operationId} returns a credential in clear text, which would then be part of the conversation. It is blocked unless VSPONEBLOCK_ALLOW_SECRET_READS=true is set in the MCP server configuration.`;
   }
   return undefined;
 }
@@ -83,7 +75,7 @@ for (const op of spec.operations.values()) {
   directOps.set(toolName(op), op);
 }
 const unknownSets = cfg.toolsets.filter((t) => t.toLowerCase() !== "all" && !spec.tags.some((x) => x.name.toLowerCase() === t.toLowerCase()));
-if (unknownSets.length) console.error(`[vsp360-mcp] Unknown VSP360_TOOLSETS entries ignored: ${unknownSets.join(", ")}`);
+if (unknownSets.length) console.error(`[vsponeblock-mcp] Unknown VSPONEBLOCK_TOOLSETS entries ignored: ${unknownSets.join(", ")}`);
 
 // ---------- handlers ----------
 
@@ -95,13 +87,13 @@ function text(t: string, isError = false) {
 const str = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 const int = (v: unknown, fallback: number): number => (typeof v === "number" || (typeof v === "string" && v.trim() !== "")) && Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : fallback;
 
-const unknownOperation = (id: unknown) => text(`Unknown operationId "${str(id)}". Use vsp360_list_operations to find it.`, true);
+const unknownOperation = (id: unknown) => text(`Unknown operationId "${str(id)}". Use vsponeblock_list_operations to find it.`, true);
 
 function accessLabel(op: Operation): string {
   const blocked = blockedReason(op);
-  if (op.secret) return blocked ? "read, returns a secret (blocked: set VSP360_ALLOW_SECRET_READS=true)" : "read, returns a secret";
-  if (!op.readOnly) return blocked ? "write (blocked: server is read-only; set VSP360_ALLOW_WRITES=true)" : "write";
-  return blocked ? "read, uploads a file (blocked: set VSP360_UPLOAD_DIR)" : "read";
+  if (op.secret) return blocked ? "read, returns a secret (blocked: set VSPONEBLOCK_ALLOW_SECRET_READS=true)" : "read, returns a secret";
+  if (!op.readOnly) return blocked ? "write (blocked: server is read-only; set VSPONEBLOCK_ALLOW_WRITES=true)" : "write";
+  return blocked ? "read, uploads a file (blocked: set VSPONEBLOCK_UPLOAD_DIR)" : "read";
 }
 
 function listOperations(args: Json) {
@@ -109,7 +101,7 @@ function listOperations(args: Json) {
   const query = str(args.query).trim();
   if (!tag && !query) {
     const lines = spec.tags.map((t) => `- ${t.name} (${t.count}): ${t.description}`);
-    return text(`VSP 360 API areas (${spec.operations.size} operations). Pass tag or query to list operations.\n\n${lines.join("\n")}`);
+    return text(`VSP One Block API areas (${spec.operations.size} operations). Pass tag or query to list operations.\n\n${lines.join("\n")}`);
   }
   const fmt = (op: Operation) => `${op.operationId} [${op.secret ? "secret" : op.readOnly ? "read" : "write"}] ${op.method} ${op.path} — ${op.summary}`;
   if (!query) {
@@ -123,23 +115,20 @@ function listOperations(args: Json) {
   const result = index.search(query, { tag: tag || undefined, limit: Math.max(limit, 10) });
   const { confidence, reason, lead, coverage, intent } = result;
   const hits = result.hits.slice(0, limit);
-  const hint = hintFor(query, result);
-  const suggestion = decisionModel && hits.length && (showHint || decisions.enabled) ? predict(decisionModel, decisionFeatures(query, result, !!hint)) : undefined;
   const request = str(args.request).trim() || undefined;
   if (collect && !request) {
-    decisions.refused({ tool: "vsp360_list_operations", reason: "no_request" });
+    decisions.refused({ tool: "vsponeblock_list_operations", reason: "no_request" });
     return text("Data collection mode: pass `request` with the user's question in their own words, then search again.", true);
   }
   decisions.search({
-    query, request, tag: tag || undefined, confidence, lead, coverage, intent, analyticsHint: !!hint,
+    query, request, tag: tag || undefined, confidence, lead, coverage, intent,
     hits: hits.map((h) => ({ id: h.op.operationId, score: h.score })),
-    ...(suggestion ? { suggestion: { decision: suggestion.decision, p: +suggestion.p.toFixed(3), shown: showHint } } : {}),
   });
   if (!hits.length) return text("No operations matched. Try other words, or call with no arguments to see the API areas.");
   // With a HIGH-confidence top result, its parameters come with the results, so Claude can usually call it
-  // straight away instead of spending a turn on describe. Analytics is left out: it needs describe's MQL reference.
+  // straight away instead of spending a turn on describe.
   const top = hits[0].op;
-  const withParams = confidence === "high" && !blockedReason(top) && top.operationId !== "analyticsRunQuery";
+  const withParams = confidence === "high" && !blockedReason(top);
   const advice = {
     high: withParams
       ? "Use the top result. Its parameters are listed below, so you can usually call it directly; describe it only if you need the full schema or the response format."
@@ -148,9 +137,8 @@ function listOperations(args: Json) {
     low: "Results are ambiguous. Describe the top 2–3 candidates and pick by their descriptions, or refine the query with more specific words.",
   }[confidence];
   const lines = hits.map((h, i) => `${i + 1}. ${fmt(h.op)}  (score ${h.score.toFixed(2)}; matched: ${h.matched.join(", ")})`);
-  const suggested = showHint && suggestion ? `\nSuggested next step (learned model, p=${suggestion.p.toFixed(2)}): ${suggestionText(suggestion.decision, hits[0].op.operationId)}` : "";
   const params = withParams ? `\n\nParameters of ${top.operationId}${top.bodyContentType ? " (* = required body field)" : ""}:\n${paramSummary(top)}` : "";
-  return text(`Confidence: ${confidence.toUpperCase()}: ${reason}.\n${advice}${hint ? "\n" + hint : ""}${suggested}\n\n${lines.join("\n")}${params}`);
+  return text(`Confidence: ${confidence.toUpperCase()}: ${reason}.\n${advice}\n\n${lines.join("\n")}${params}`);
 }
 
 /** A short type for a JSON schema: enums list their values, arrays end in [], objects say object. */
@@ -182,26 +170,10 @@ function paramSummary(op: Operation): string {
   return lines.length ? lines.join("\n") : "- none";
 }
 
-function suggestionText(d: Decision, top: string): string {
-  return {
-    call: `use ${top}.`,
-    compare: "describe the top 2-3 results and pick by their descriptions.",
-    analytics: "answer with analyticsRunQuery (MQL); describe it for the syntax.",
-    // Worded to keep Claude looking: in A/B testing, "the API may not cover this" made it give up too early.
-    not_found: "the top result is probably not the right one. Describe the top 2-3 to check, then search again with different words if none fits.",
-  }[d];
-}
-
 function describeOperation(args: Json) {
   const op = spec.operations.get(str(args.operationId));
   if (!op) return unknownOperation(args.operationId);
   decisions.describe(op.operationId);
-  const resourceType = str(args.resourceType);
-  if (op.operationId === "analyticsRunQuery" && resourceType) {
-    const t = analyticsFields.type(resourceType);
-    if (!t) return text(`Unknown MQL resource type "${resourceType}". Known types: ${analyticsFields.names().join(", ")}.`, true);
-    return text(JSON.stringify(t));
-  }
   const out: Json = {
     operationId: op.operationId,
     method: op.method,
@@ -217,16 +189,15 @@ function describeOperation(args: Json) {
     if (isMultipart(op)) out.requestBody.fileFields = fileFields(op);
   }
   out.response = spec.responseSchema(op);
-  if (op.operationId === "analyticsRunQuery" && analyticsFields.loaded) out.mqlReference = analyticsFields.reference();
   return text(JSON.stringify(out));
 }
 
 async function runOperation(op: Operation, args: CallArgs, via: "meta" | "direct") {
   if (collect && !decisions.searchedFor(op.operationId, cfg.decision.collectSeconds)) {
-    decisions.refused({ tool: via === "meta" ? "vsp360_call_operation" : toolName(op), operationId: op.operationId, reason: "not_searched" });
+    decisions.refused({ tool: via === "meta" ? "vsponeblock_call_operation" : toolName(op), operationId: op.operationId, reason: "not_searched" });
     return text(
       `Data collection mode: ${op.operationId} has not appeared in a search in the last ${Math.round(cfg.decision.collectSeconds / 60)} minutes. ` +
-        "Call vsp360_list_operations with `query` and `request` (the user's question) first; call this operation if it is in the results.",
+        "Call vsponeblock_list_operations with `query` and `request` (the user's question) first; call this operation if it is in the results.",
       true,
     );
   }
@@ -247,7 +218,7 @@ async function runOperation(op: Operation, args: CallArgs, via: "meta" | "direct
   }
 }
 
-const server = new Server({ name: "vsp360-mcp", version: VERSION }, { capabilities: { tools: {} } });
+const server = new Server({ name: "vsponeblock-mcp", version: VERSION }, { capabilities: { tools: {} } });
 const tools = metaTools({ allowWrites: cfg.allowWrites, logging: decisions.enabled, collect });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -258,9 +229,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name } = req.params;
   const args: Json = req.params.arguments ?? {};
   try {
-    if (name === "vsp360_list_operations") return listOperations(args);
-    if (name === "vsp360_describe_operation") return describeOperation(args);
-    if (name === "vsp360_call_operation") {
+    if (name === "vsponeblock_list_operations") return listOperations(args);
+    if (name === "vsponeblock_describe_operation") return describeOperation(args);
+    if (name === "vsponeblock_call_operation") {
       const op = spec.operations.get(str(args.operationId));
       if (!op) return unknownOperation(args.operationId);
       return await runOperation(op, args, "meta");
@@ -278,8 +249,16 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 await server.connect(new StdioServerTransport());
 console.error(
-  `[vsp360-mcp] ready: ${spec.operations.size} operations, ${directOps.size} direct tools, ${cfg.allowWrites ? "read/write" : "read-only"}` +
+  `[vsponeblock-mcp] ready: ${spec.operations.size} operations, ${directOps.size} direct tools, ${cfg.allowWrites ? "read/write" : "read-only"}` +
     (decisions.enabled ? `, decision log on` : "") +
-    (collect ? `, collection mode on (${cfg.decision.collectSeconds}s window)` : "") +
-    (showHint ? ", decision hint on" : cfg.decision.hintMode !== "false" && !decisionModel ? ", decision hint off (no model file)" : cfg.decision.hintMode === "ab" ? ", decision hint off (A/B control)" : ""),
+    (collect ? `, collection mode on (${cfg.decision.collectSeconds}s window)` : ""),
 );
+
+// Discard the session on exit so it does not hold one of the array's 64 session slots until it times out.
+async function shutdown() {
+  await client?.close();
+  process.exit(0);
+}
+process.stdin.on("end", shutdown);
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

@@ -4,6 +4,5 @@ dist/
 .DS_Store
 release/
 
-# Reports hold live VSP 360 data: keep them out of git. decisions.jsonl (search decisions, no environment data) stays tracked.
-reports/*
-!reports/decisions.jsonl
+# Reports hold live storage data: keep them out of git.
+reports/

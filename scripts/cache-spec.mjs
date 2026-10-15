@@ -5,4 +5,4 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { SPEC_CACHE, specCache } from "../dist/spec.js";
 import { bundled } from "../dist/config.js";
 
-writeFileSync(SPEC_CACHE, specCache(readFileSync(bundled("spec", "Platform-vsp360-openapi.yaml"), "utf8")));
+writeFileSync(SPEC_CACHE, specCache(readFileSync(bundled("spec", "vsponeblock-10.5.4.yaml"), "utf8")));

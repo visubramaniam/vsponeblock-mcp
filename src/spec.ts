@@ -1,4 +1,4 @@
-// Loads the VSP 360 OpenAPI document and indexes every operation so the
+// Loads the VSP One Block OpenAPI document and indexes every operation so the
 // server can expose them as MCP tools.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -29,28 +29,24 @@ export interface Operation {
   successContentTypes: string[];
   readOnly: boolean;
   destructive: boolean;
-  /** A read that returns a credential in clear text; refused unless VSP360_ALLOW_SECRET_READS=true. */
+  /** A read that returns a credential in clear text; refused unless VSPONEBLOCK_ALLOW_SECRET_READS=true. */
   secret: boolean;
+  /** How the request is authenticated: the server's session token, Basic credentials, or nothing. */
+  auth: Auth;
 }
+
+export type Auth = "session" | "basic" | "none";
 
 const METHODS = ["get", "post", "put", "patch", "delete"];
 
-// The server obtains tokens itself, so the token endpoint is never a tool.
-const HIDDEN = new Set(["vsp360PostAuthToken"]);
+// The server opens and discards its own session, so these are never tools.
+const HIDDEN = new Set(["postSession", "deleteSession"]);
 
-// POST operations that only read or validate and change nothing on the platform.
-const READ_ONLY_POSTS = new Set([
-  "analyticsRunQuery",
-  "vsp360PostAuthorizationCheck",
-  "vsp360PostDevicesInventory",
-  "vsp360GetUserCapabilities",
-  "vsp360PostDevicesEnrollmentTemplateValidate",
-  "vsp360PostUpgradesValidate",
-  "vsp360VerifyDirectory",
-]);
+// POST operations that only read and change nothing on the storage system.
+const READ_ONLY_POSTS = new Set(["configurationReportsReportIdActionsDownloadInvokePost"]);
 
-// Reads that return a live credential. Every other read masks secrets, per the spec.
-const SECRET_READS = new Set(["vsp360GetServiceAccountSecret"]);
+// Reads that return a live credential. None of the VSP One Block reads do, but the check stays for other specs.
+const SECRET_READS = new Set<string>();
 
 /**
  * Pre-parsed copy of the bundled YAML spec, written by `npm run build` (scripts/cache-spec.mjs) as
@@ -166,6 +162,7 @@ export class Spec {
       readOnly,
       destructive: method === "delete",
       secret: SECRET_READS.has(op.operationId),
+      auth: authOf(op.security ?? this.doc.security),
     };
   }
 
@@ -230,6 +227,19 @@ export class Spec {
     }
     return undefined;
   }
+}
+
+/**
+ * The scheme an operation's `security` asks for. Most operations take a session token; a few (DKC power state)
+ * take Basic credentials only, and a few (version, storage list) need no authentication.
+ */
+function authOf(security: Json): Auth {
+  if (!Array.isArray(security)) return "session";
+  if (!security.length) return "none";
+  const schemes = security.flatMap((s: Json) => Object.keys(s ?? {}));
+  if (schemes.includes("session")) return "session";
+  if (schemes.includes("basicAuth")) return "basic";
+  return "session";
 }
 
 function firstSentence(text = ""): string {

@@ -23,13 +23,13 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
 # ---- runtime ----
 FROM node:22-alpine
-LABEL org.opencontainers.image.title="vsp360-mcp" \
-      org.opencontainers.image.description="Community MCP server for Hitachi VSP 360 (not an official Hitachi Vantara product)" \
-      org.opencontainers.image.source="https://github.com/visubramaniam/vsp360-mcp" \
+LABEL org.opencontainers.image.title="vsponeblock-mcp" \
+      org.opencontainers.image.description="Community MCP server for Hitachi VSP One Block (not an official Hitachi Vantara product)" \
+      org.opencontainers.image.source="https://github.com/visubramaniam/vsponeblock-mcp" \
       org.opencontainers.image.licenses="MIT"
 WORKDIR /app
 ENV NODE_ENV=production \
-    VSP360_DOWNLOAD_DIR=/downloads
+    VSPONEBLOCK_DOWNLOAD_DIR=/downloads
 COPY package.json package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

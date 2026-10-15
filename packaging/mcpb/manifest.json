@@ -1,21 +1,21 @@
 {
   "manifest_version": "0.2",
-  "name": "vsp360-mcp",
-  "display_name": "Hitachi VSP 360 (Community)",
+  "name": "vsponeblock-mcp",
+  "display_name": "Hitachi VSP One Block (Community)",
   "version": "0.0.0",
-  "description": "Community MCP server for Hitachi VSP 360: query and manage VSP 360 through its REST API.",
-  "long_description": "Gives Claude access to all 264 operations of the Hitachi VSP 360 1.4 REST API through three discovery tools: find an operation, read its parameters, then call it. The server is read-only by default; operations that change state are refused unless you turn on Allow writes. This is a community project, not an official Hitachi Vantara product.",
+  "description": "Community MCP server for Hitachi VSP One Block: query and manage your storage system through its REST API.",
+  "long_description": "Gives Claude access to all 425 operations of the Hitachi VSP One Block REST API (Configuration Manager, microcode 10.5.4) through three discovery tools: find an operation, read its parameters, then call it. The server signs in with a storage user and manages its REST API session. It is read-only by default; operations that change the storage system are refused unless you turn on Allow writes. This is a community project, not an official Hitachi Vantara product.",
   "author": {
     "name": "Vinod Subramaniam"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/visubramaniam/vsp360-mcp"
+    "url": "https://github.com/visubramaniam/vsponeblock-mcp"
   },
-  "homepage": "https://github.com/visubramaniam/vsp360-mcp",
-  "documentation": "https://github.com/visubramaniam/vsp360-mcp#readme",
+  "homepage": "https://github.com/visubramaniam/vsponeblock-mcp",
+  "documentation": "https://github.com/visubramaniam/vsponeblock-mcp#readme",
   "license": "MIT",
-  "keywords": ["hitachi", "vsp360", "storage", "san"],
+  "keywords": ["hitachi", "vsp-one-block", "vsp", "storage", "san"],
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -23,22 +23,22 @@
       "command": "node",
       "args": ["${__dirname}/dist/index.js"],
       "env": {
-        "VSP360_URL": "${user_config.url}",
-        "VSP360_CLIENT_ID": "${user_config.client_id}",
-        "VSP360_CLIENT_SECRET": "${user_config.client_secret}",
-        "VSP360_TOOLSETS": "${user_config.toolsets}",
-        "VSP360_ALLOW_WRITES": "${user_config.allow_writes}",
-        "VSP360_CA_CERT": "${user_config.ca_cert}",
-        "VSP360_INSECURE_TLS": "${user_config.insecure_tls}",
-        "VSP360_DOWNLOAD_DIR": "${user_config.download_dir}",
-        "VSP360_UPLOAD_DIR": "${user_config.upload_dir}"
+        "VSPONEBLOCK_URL": "${user_config.url}",
+        "VSPONEBLOCK_USER": "${user_config.user}",
+        "VSPONEBLOCK_PASSWORD": "${user_config.password}",
+        "VSPONEBLOCK_TOOLSETS": "${user_config.toolsets}",
+        "VSPONEBLOCK_ALLOW_WRITES": "${user_config.allow_writes}",
+        "VSPONEBLOCK_CA_CERT": "${user_config.ca_cert}",
+        "VSPONEBLOCK_INSECURE_TLS": "${user_config.insecure_tls}",
+        "VSPONEBLOCK_DOWNLOAD_DIR": "${user_config.download_dir}",
+        "VSPONEBLOCK_UPLOAD_DIR": "${user_config.upload_dir}"
       }
     }
   },
   "tools": [
-    { "name": "vsp360_list_operations", "description": "Search the VSP 360 API operations by keyword or tag." },
-    { "name": "vsp360_describe_operation", "description": "Show an operation's parameters and request body schema." },
-    { "name": "vsp360_call_operation", "description": "Call a VSP 360 API operation." }
+    { "name": "vsponeblock_list_operations", "description": "Search the VSP One Block REST API operations by keyword or tag." },
+    { "name": "vsponeblock_describe_operation", "description": "Show an operation's parameters and request body schema." },
+    { "name": "vsponeblock_call_operation", "description": "Call a VSP One Block API operation." }
   ],
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"],
@@ -47,27 +47,27 @@
   "user_config": {
     "url": {
       "type": "string",
-      "title": "VSP 360 URL",
-      "description": "Base URL of your VSP 360, e.g. https://vsp360.example.com",
+      "title": "Storage system URL",
+      "description": "Address of the REST API server, e.g. https://192.0.2.10 (the SVP, or the controller for VSP One Block 20 series). /ConfigurationManager is added for you.",
       "required": true
     },
-    "client_id": {
+    "user": {
       "type": "string",
-      "title": "Client ID",
-      "description": "Client ID of the VSP 360 service account",
+      "title": "User name",
+      "description": "Storage system user. Use a user with only the roles you need, e.g. Storage Administrator (View Only) for read-only use.",
       "required": true
     },
-    "client_secret": {
+    "password": {
       "type": "string",
-      "title": "Client secret",
-      "description": "Client secret of the VSP 360 service account",
+      "title": "Password",
+      "description": "Password of that user",
       "required": true,
       "sensitive": true
     },
     "toolsets": {
       "type": "string",
       "title": "Direct toolsets",
-      "description": "Optional. Comma-separated API areas (tags) to expose as direct tools, e.g. Device Registry,Platform Alerts",
+      "description": "Optional. Comma-separated API areas (tags) to expose as direct tools, e.g. simple/volumes,simple/pools",
       "required": false,
       "default": ""
     },
@@ -81,7 +81,7 @@
     "ca_cert": {
       "type": "file",
       "title": "CA certificate",
-      "description": "Optional. PEM file of the CA that signed the VSP 360 certificate",
+      "description": "Optional. PEM file of the CA that signed the VSP One Block certificate",
       "required": false
     },
     "insecure_tls": {
@@ -94,13 +94,13 @@
     "download_dir": {
       "type": "directory",
       "title": "Download folder",
-      "description": "Optional. Where downloaded files are saved. Defaults to ~/Downloads/vsp360-mcp",
+      "description": "Optional. Where downloaded files are saved. Defaults to ~/Downloads/vsponeblock-mcp",
       "required": false
     },
     "upload_dir": {
       "type": "directory",
       "title": "Upload folder",
-      "description": "Optional. The only folder files may be uploaded from. Read-only mode refuses uploads unless this is set.",
+      "description": "Optional. The only folder files (certificates, encryption key backups) may be uploaded from. Uploads are write operations, so they also need Allow writes.",
       "required": false
     }
   }
