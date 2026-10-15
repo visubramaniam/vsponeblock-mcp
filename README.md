@@ -61,7 +61,8 @@ Then install the server in one of these ways. Each [GitHub release](https://gith
 | `vsponeblock-mcp-<version>.mcpb` | Claude Desktop | One-click install: open the file and Claude Desktop asks for the URL, user and password. |
 | `vsponeblock-mcp-<version>-<platform>.tar.gz` / `.zip` | nothing | Standalone install on macOS, Linux or Windows (x64 and arm64), with Node.js bundled in. |
 | npm package (`vsponeblock-mcp` on the npm registry) | Node.js 20+ | `npm install -g vsponeblock-mcp`, CI/CD pipelines. |
-| Docker image | Docker | See [README.docker.md](README.docker.md). |
+| Claude Code plugin | Claude Code, Node.js 20+ | The server plus capacity and health-check skills: `/plugin marketplace add visubramaniam/vsponeblock-mcp`, then `/plugin install vsponeblock-community@vsponeblock-community`. See [README.plugin.md](README.plugin.md). |
+| Docker image | Docker | `docker.io/subramaniamv/vsponeblock-mcp` or `ghcr.io/visubramaniam/vsponeblock-mcp`. See [README.docker.md](README.docker.md). |
 | Source | Node.js 22+ | Development: `npm install && npm run build`, then use `node /ABSOLUTE/PATH/TO/vsponeblock-mcp/dist/index.js` as the command. |
 
 **Standalone.** Unpack the archive anywhere and use `bin/vsponeblock-mcp` (`bin\vsponeblock-mcp.cmd` on Windows) as the server command. You can symlink it onto your `PATH`:
@@ -142,6 +143,8 @@ Call `vsponeblock_list_operations` with no arguments for the full list with coun
 `npm run package` builds every release package into `release/`. Use `--only npm,mcpb,standalone` and `--targets linux-x64,...` to build fewer, e.g. `npm run package -- --only standalone --targets darwin-arm64`. The standalone packages bundle Node.js 24, downloaded from nodejs.org and checked against its published SHA-256 sums.
 
 The [Release workflow](.github/workflows/release.yml) runs when a `v*` tag is pushed. It runs the tests, builds the packages and attaches them to the tag's GitHub release; if that release doesn't exist yet, it's created from the version's `CHANGELOG.md` section. It then publishes the same `.tgz` to the npm registry with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (set up on npmjs.com under the package's **Settings → Trusted Publisher**, repository `visubramaniam/vsponeblock-mcp`, workflow `release.yml`); this is skipped if that version is already on npm. It pushes the `linux/amd64` and `linux/arm64` Docker image to `ghcr.io/visubramaniam/vsponeblock-mcp` using the workflow's own token, and also to Docker Hub if the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets are set.
+
+The Claude plugin in `plugin/` installs the server from its own lockfile, so it can only pin a version that's already on npm. After a release is published, update it in a follow-up pull request; see [README.plugin.md](README.plugin.md#for-maintainers).
 
 ## Updating for a new microcode release
 

@@ -1,0 +1,91 @@
+{
+  "name": "vsponeblock-community",
+  "displayName": "Hitachi VSP One Block (Community)",
+  "version": "0.1.0",
+  "description": "Community MCP server for Hitachi VSP One Block: query pools, volumes, servers, ports, snapshots, replication and alerts through the storage system's REST API. Read-only by default. Not an official Hitachi Vantara product.",
+  "author": {
+    "name": "Vinod Subramaniam",
+    "url": "https://github.com/visubramaniam"
+  },
+  "homepage": "https://github.com/visubramaniam/vsponeblock-mcp",
+  "repository": "https://github.com/visubramaniam/vsponeblock-mcp",
+  "license": "MIT",
+  "keywords": ["hitachi", "vsp-one-block", "storage", "san", "capacity", "health"],
+  "documentationUrl": "https://github.com/visubramaniam/vsponeblock-mcp/blob/main/README.plugin.md",
+  "privacyPolicyUrl": "https://github.com/visubramaniam/vsponeblock-mcp/blob/main/README.plugin.md#privacy",
+  "supportUrl": "https://github.com/visubramaniam/vsponeblock-mcp/issues",
+  "mcpServers": {
+    "vsponeblock": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/node_modules/vsponeblock-mcp/dist/index.js"],
+      "env": {
+        "VSPONEBLOCK_URL": "${user_config.url}",
+        "VSPONEBLOCK_USER": "${user_config.user}",
+        "VSPONEBLOCK_PASSWORD": "${user_config.password}",
+        "VSPONEBLOCK_TOOLSETS": "${user_config.toolsets}",
+        "VSPONEBLOCK_ALLOW_WRITES": "${user_config.allow_writes}",
+        "VSPONEBLOCK_CA_CERT": "${user_config.ca_cert}",
+        "VSPONEBLOCK_INSECURE_TLS": "${user_config.insecure_tls}",
+        "VSPONEBLOCK_DOWNLOAD_DIR": "${user_config.download_dir}",
+        "VSPONEBLOCK_UPLOAD_DIR": "${user_config.upload_dir}"
+      }
+    }
+  },
+  "userConfig": {
+    "url": {
+      "type": "string",
+      "title": "Storage system URL",
+      "description": "Address of the REST API server, e.g. https://192.0.2.10 (the SVP, or the controller for the VSP One Block 20 series). /ConfigurationManager is added for you.",
+      "required": true
+    },
+    "user": {
+      "type": "string",
+      "title": "User name",
+      "description": "Storage system user. For read-only use, a user whose only user group is Storage Administrator (View Only).",
+      "required": true
+    },
+    "password": {
+      "type": "string",
+      "title": "Password",
+      "description": "Password of that user. Stored in your system's secure credential store.",
+      "required": true,
+      "sensitive": true
+    },
+    "toolsets": {
+      "type": "string",
+      "title": "Direct toolsets",
+      "description": "Optional. Comma-separated API areas to expose as direct tools, e.g. simple/volumes,simple/pools",
+      "default": ""
+    },
+    "allow_writes": {
+      "type": "boolean",
+      "title": "Allow writes",
+      "description": "Allow operations that change the storage system. Leave off for read-only access.",
+      "default": false
+    },
+    "ca_cert": {
+      "type": "string",
+      "title": "CA certificate",
+      "description": "Optional. Path to the PEM file of the CA that signed the storage system's certificate",
+      "default": ""
+    },
+    "insecure_tls": {
+      "type": "boolean",
+      "title": "Skip TLS verification",
+      "description": "Accept any certificate. For lab systems with self-signed certificates only.",
+      "default": false
+    },
+    "download_dir": {
+      "type": "string",
+      "title": "Download folder",
+      "description": "Optional. Where downloaded files are saved. Defaults to ~/Downloads/vsponeblock-mcp",
+      "default": ""
+    },
+    "upload_dir": {
+      "type": "string",
+      "title": "Upload folder",
+      "description": "Optional. The only folder files (certificates, key backups) may be uploaded from. Uploads also need Allow writes.",
+      "default": ""
+    }
+  }
+}

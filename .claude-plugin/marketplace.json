@@ -1,0 +1,17 @@
+{
+  "name": "vsponeblock-community",
+  "owner": {
+    "name": "Vinod Subramaniam",
+    "url": "https://github.com/visubramaniam"
+  },
+  "metadata": {
+    "description": "Community MCP server for Hitachi VSP One Block, as a Claude plugin. Not an official Hitachi Vantara product."
+  },
+  "plugins": [
+    {
+      "name": "vsponeblock-community",
+      "source": "./plugin",
+      "description": "Query Hitachi VSP One Block pools, volumes, servers, snapshots, replication and alerts through its REST API. Read-only by default."
+    }
+  ]
+}
