@@ -8,6 +8,7 @@ This guide covers installing and deploying the server. For what the server does 
 - [Choose an install method](#choose-an-install-method)
 - [Claude Desktop extension (.mcpb)](#claude-desktop-extension-mcpb)
 - [Standalone package](#standalone-package)
+- [Claude Code plugin](#claude-code-plugin)
 - [npm package](#npm-package)
 - [Docker](#docker)
 - [From source](#from-source)
@@ -34,6 +35,7 @@ All packages are on the [GitHub releases page](https://github.com/visubramaniam/
 |---|---|---|
 | [Claude Desktop extension](#claude-desktop-extension-mcpb) | Claude Desktop | Claude Desktop users. One click, no other software. |
 | [Standalone package](#standalone-package) | nothing | Servers and workstations without Node.js; Claude Code. |
+| [Claude Code plugin](#claude-code-plugin) | Claude Code, Node.js 20 or later | Claude Code and Cowork: the server plus capacity and health-check skills, with guided settings. |
 | [npm package](#npm-package) | Node.js 20 or later | Machines that already have Node.js; CI/CD pipelines. Installed from the npm registry. |
 | [Docker](#docker) | Docker | Isolated or containerised deployments. |
 | [From source](#from-source) | Node.js 22 or later, git | Development. |
@@ -108,6 +110,17 @@ Unzip the archive to a folder such as `C:\Program Files\vsponeblock-mcp`. This c
 
 From a Command Prompt you can also run `bin\vsponeblock-mcp.cmd`. In MCP client configs, use `node.exe` and `index.js` as shown in [Connect it to Claude](#connect-it-to-claude), because clients often can't start `.cmd` files directly.
 
+
+## Claude Code plugin
+
+The [`plugin/`](https://github.com/visubramaniam/vsponeblock-mcp/tree/main/plugin) folder is a Claude Code plugin, **vsponeblock-community**. It installs the server from its own lockfile (every package pinned with an integrity hash, from the npm registry) and adds two skills: a capacity report and a health check. In Claude Code:
+
+```
+/plugin marketplace add visubramaniam/vsponeblock-mcp
+/plugin install vsponeblock-community@vsponeblock-community
+```
+
+Claude Code asks for the storage system URL, user name and password, and stores the password in your system's secure credential store. The plugin works in Claude Code and in Cowork sessions on your computer. [README.plugin.md](README.plugin.md) covers it in full: settings, the skills, updating, troubleshooting and privacy.
 
 ## npm package
 

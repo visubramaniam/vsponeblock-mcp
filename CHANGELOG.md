@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Claude Code plugin, vsponeblock-community** (`plugin/`), installable with `/plugin marketplace add visubramaniam/vsponeblock-mcp`. It runs vsponeblock-mcp 0.1.0 from a lockfile of npm registry packages with integrity hashes, asks for the storage system URL, user and password (kept in the system credential store), and adds two skills: `vsponeblock-capacity-report` (pool and array capacity, subscription, data reduction, with unit conversion) and `vsponeblock-health-check` (health status, alerts, drives, pools and replication pairs). `tests/unit/plugin.test.mjs` checks the plugin's version, lockfile and settings. See README.plugin.md.
+- **Docker Hub:** the 0.1.0 image is now also at `docker.io/subramaniamv/vsponeblock-mcp` (`linux/amd64` and `linux/arm64`), alongside ghcr.io.
+
 ## 0.1.0 — 2026-10-15
 
 First community release of vsponeblock-mcp, forked from [vsp360-mcp](https://github.com/visubramaniam/vsp360-mcp) 0.1.21 and adapted to the Hitachi VSP One Block REST API. The fork keeps vsp360-mcp's git history up to that release.
